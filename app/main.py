@@ -7,6 +7,22 @@ import csv
 import io
 
 app = FastAPI(title="FinGraph API")
+# =========================
+# CORS Configuration
+# =========================
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -1913,6 +1929,135 @@ def acknowledge_alert(txn_id: str):
 
     except HTTPException:
         raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+# =========================
+# Fraud Network API
+# =========================
+
+@app.get("/fraud-network")
+def get_fraud_network(limit: int = 50):
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (a:Account)-[:MADE]->(t:Transaction)
+                OPTIONAL MATCH (t)-[:AT_MERCHANT]->(m:Merchant)
+                OPTIONAL MATCH (t)-[:OCCURRED_IN]->(l:Location)
+
+                WHERE t.fraud_label <> 'normal'
+
+                RETURN
+                    a.account_id AS account_id,
+                    a.risk_score AS account_risk_score,
+                    a.risk_tier AS account_risk_tier,
+                    t.txn_id AS txn_id,
+                    t.risk_index AS risk_index,
+                    t.fraud_label AS fraud_label,
+                    t.txn_amount AS amount,
+                    m.merchant_type AS merchant_type,
+                    l.city AS city
+
+                ORDER BY t.risk_index DESC
+                LIMIT $limit
+                """,
+                limit=limit
+            )
+
+            nodes = []
+            edges = []
+            seen_nodes = set()
+
+            for record in result:
+
+                account_id = record["account_id"]
+                txn_id = record["txn_id"]
+                merchant_type = record["merchant_type"]
+                city = record["city"]
+
+                # Account node
+                account_node_id = f"account:{account_id}"
+
+                if account_node_id not in seen_nodes:
+                    nodes.append({
+                        "id": account_node_id,
+                        "type": "account",
+                        "label": account_id,
+                        "risk_score": record["account_risk_score"],
+                        "risk_tier": record["account_risk_tier"]
+                    })
+                    seen_nodes.add(account_node_id)
+
+                # Transaction node
+                txn_node_id = f"transaction:{txn_id}"
+
+                if txn_node_id not in seen_nodes:
+                    nodes.append({
+                        "id": txn_node_id,
+                        "type": "transaction",
+                        "label": txn_id,
+                        "risk_index": record["risk_index"],
+                        "fraud_label": record["fraud_label"],
+                        "amount": record["amount"]
+                    })
+                    seen_nodes.add(txn_node_id)
+
+                edges.append({
+                    "source": account_node_id,
+                    "target": txn_node_id,
+                    "relationship": "MADE"
+                })
+
+                # Merchant node
+                if merchant_type:
+                    merchant_node_id = f"merchant:{merchant_type}"
+
+                    if merchant_node_id not in seen_nodes:
+                        nodes.append({
+                            "id": merchant_node_id,
+                            "type": "merchant",
+                            "label": merchant_type
+                        })
+                        seen_nodes.add(merchant_node_id)
+
+                    edges.append({
+                        "source": txn_node_id,
+                        "target": merchant_node_id,
+                        "relationship": "AT_MERCHANT"
+                    })
+
+                # Location node
+                if city:
+                    location_node_id = f"location:{city}"
+
+                    if location_node_id not in seen_nodes:
+                        nodes.append({
+                            "id": location_node_id,
+                            "type": "location",
+                            "label": city
+                        })
+                        seen_nodes.add(location_node_id)
+
+                    edges.append({
+                        "source": txn_node_id,
+                        "target": location_node_id,
+                        "relationship": "OCCURRED_IN"
+                    })
+
+            return {
+                "nodes": nodes,
+                "edges": edges,
+                "stats": {
+                    "total_nodes": len(nodes),
+                    "total_edges": len(edges)
+                }
+            }
 
     except Exception as e:
         raise HTTPException(
