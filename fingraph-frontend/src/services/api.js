@@ -1,60 +1,82 @@
-const API_BASE_URL =
-  "https://corn-guidance-penguin-probe.trycloudflare.com";
+const API_BASE_URL = "/api";
 
-export async function getStats() {
-  const response = await fetch(`${API_BASE_URL}/stats`);
+const apiRequest = async (endpoint, options = {}) => {
+  const url = `${API_BASE_URL}${endpoint}`;
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch statistics");
+  console.log("🔥 API REQUEST:", url);
+
+  try {
+    const response = await fetch(url, {
+      method: options.method || "GET",
+
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
+
+      ...options,
+    });
+
+    console.log("🔥 API STATUS:", response.status);
+
+    if (!response.ok) {
+      let errorMessage = `Backend request failed: ${response.status}`;
+
+      try {
+        const errorData = await response.json();
+
+        if (errorData?.detail) {
+          errorMessage = errorData.detail;
+        } else if (errorData?.message) {
+          errorMessage = errorData.message;
+        }
+      } catch {
+        // Ignore JSON parsing error
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error("❌ API ERROR:", error);
+    throw error;
   }
+};
 
-  return response.json();
-}
+// ======================================================
+// FRAUD NETWORK
+// ======================================================
 
-export async function getTransactions(limit = 5) {
-  const response = await fetch(
-    `${API_BASE_URL}/transactions?limit=${limit}`
+export const getFraudNetwork = async (limit = 20) => {
+  return apiRequest(
+    `/fraud-network?limit=${encodeURIComponent(limit)}`
   );
+};
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch transactions");
-  }
+// ======================================================
+// OTHER APIs
+// ======================================================
 
-  return response.json();
-}
+export const getStats = async () => {
+  return apiRequest("/stats");
+};
 
-export async function getFraudAnalytics(limit = 5) {
-  const response = await fetch(
-    `${API_BASE_URL}/fraud-analytics?limit=${limit}`
-  );
+export const getTransactions = async () => {
+  return apiRequest("/transactions");
+};
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch fraud analytics");
-  }
+export const getFraudAnalytics = async () => {
+  return apiRequest("/fraud-analytics");
+};
 
-  return response.json();
-}
+export const getFraudBreakdown = async () => {
+  return apiRequest("/fraud-breakdown");
+};
 
-export async function getFraudBreakdown() {
-  const response = await fetch(
-    `${API_BASE_URL}/fraud-breakdown`
-  );
+export const getRiskDistribution = async () => {
+  return apiRequest("/risk-distribution");
+};
 
-  if (!response.ok) {
-    throw new Error("Failed to fetch fraud breakdown");
-  }
-
-  return response.json();
-}
-
-export async function getRiskDistribution() {
-  const response = await fetch(
-    `${API_BASE_URL}/risk-distribution`
-  );
-
-  if (!response.ok) {
-    throw new Error("Failed to fetch risk distribution");
-  }
-
-  return response.json();
-}
+export default apiRequest;

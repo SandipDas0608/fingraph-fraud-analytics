@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
+
 import {
   getFraudAnalytics,
+  getFraudBreakdown,
   getRiskDistribution,
 } from "../services/api";
 
@@ -14,6 +16,7 @@ function Analytics() {
 
   const [transactions, setTransactions] = useState([]);
   const [riskData, setRiskData] = useState(null);
+  const [breakdownData, setBreakdownData] = useState([]);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -28,14 +31,19 @@ function Analytics() {
         setLoading(true);
         setError("");
 
-        const [fraudResponse, riskResponse] =
-          await Promise.all([
-            getFraudAnalytics(50),
-            getRiskDistribution(),
-          ]);
+        const [
+          fraudResponse,
+          riskResponse,
+          breakdownResponse,
+        ] = await Promise.all([
+          getFraudAnalytics(50),
+          getRiskDistribution(),
+          getFraudBreakdown(),
+        ]);
 
         // =====================================
         // FRAUD ANALYTICS
+        // Backend key: transactions
         // =====================================
 
         const backendTransactions =
@@ -109,9 +117,24 @@ function Analytics() {
 
         // =====================================
         // RISK DISTRIBUTION
+        // Backend key: distribution
         // =====================================
 
         setRiskData(riskResponse);
+
+        // =====================================
+        // FRAUD BREAKDOWN
+        // Backend key: channels
+        // =====================================
+
+        const backendChannels =
+          breakdownResponse?.channels || [];
+
+        setBreakdownData(
+          Array.isArray(backendChannels)
+            ? backendChannels
+            : []
+        );
 
       } catch (err) {
         console.error(
@@ -263,28 +286,34 @@ function Analytics() {
   // =========================================
 
   const highRiskPercentage =
-    highRiskData?.percentage ??
-    (totalTransactions > 0
-      ? (highRisk /
-          totalTransactions) *
-        100
-      : 0);
+    Number(
+      highRiskData?.percentage ??
+        (totalTransactions > 0
+          ? (highRisk /
+              totalTransactions) *
+            100
+          : 0)
+    );
 
   const mediumRiskPercentage =
-    mediumRiskData?.percentage ??
-    (totalTransactions > 0
-      ? (mediumRisk /
-          totalTransactions) *
-        100
-      : 0);
+    Number(
+      mediumRiskData?.percentage ??
+        (totalTransactions > 0
+          ? (mediumRisk /
+              totalTransactions) *
+            100
+          : 0)
+    );
 
   const lowRiskPercentage =
-    lowRiskData?.percentage ??
-    (totalTransactions > 0
-      ? (lowRisk /
-          totalTransactions) *
-        100
-      : 0);
+    Number(
+      lowRiskData?.percentage ??
+        (totalTransactions > 0
+          ? (lowRisk /
+              totalTransactions) *
+            100
+          : 0)
+    );
 
   // =========================================
   // RETURN UI
@@ -303,7 +332,8 @@ function Analytics() {
           <h2>Fraud Analytics</h2>
 
           <p>
-            Analyze transaction patterns, fraud trends, and risk metrics.
+            Analyze transaction patterns,
+            fraud trends, and risk metrics.
           </p>
         </div>
 
@@ -410,7 +440,7 @@ function Analytics() {
       </div>
 
       {/* =====================================
-          ANALYTICS SECTION
+          ANALYTICS GRID
       ====================================== */}
 
       <div className="analytics-grid">
@@ -462,7 +492,10 @@ function Analytics() {
                 <div
                   className="risk-bar-fill high"
                   style={{
-                    width: `${highRiskPercentage}%`,
+                    width: `${Math.min(
+                      highRiskPercentage,
+                      100
+                    )}%`,
                   }}
                 ></div>
 
@@ -493,7 +526,10 @@ function Analytics() {
                 <div
                   className="risk-bar-fill medium"
                   style={{
-                    width: `${mediumRiskPercentage}%`,
+                    width: `${Math.min(
+                      mediumRiskPercentage,
+                      100
+                    )}%`,
                   }}
                 ></div>
 
@@ -524,7 +560,10 @@ function Analytics() {
                 <div
                   className="risk-bar-fill low"
                   style={{
-                    width: `${lowRiskPercentage}%`,
+                    width: `${Math.min(
+                      lowRiskPercentage,
+                      100
+                    )}%`,
                   }}
                 ></div>
 
@@ -617,6 +656,163 @@ function Analytics() {
             </div>
 
           </div>
+
+        </div>
+
+      </div>
+
+      {/* =====================================
+          FRAUD BREAKDOWN BY CHANNEL
+      ====================================== */}
+
+      <div className="investigation-panel analytics-table-panel">
+
+        <div className="panel-header">
+
+          <div>
+
+            <h3>
+              Fraud Breakdown
+            </h3>
+
+            <small>
+              Fraud and risk metrics by transaction channel
+            </small>
+
+          </div>
+
+        </div>
+
+        <div className="table-container">
+
+          <table>
+
+            <thead>
+
+              <tr>
+
+                <th>
+                  Channel
+                </th>
+
+                <th>
+                  Total Transactions
+                </th>
+
+                <th>
+                  Suspicious Transactions
+                </th>
+
+                <th>
+                  Fraud %
+                </th>
+
+                <th>
+                  Average Risk
+                </th>
+
+                <th>
+                  Highest Risk
+                </th>
+
+              </tr>
+
+            </thead>
+
+            <tbody>
+
+              {loading ? (
+
+                <tr>
+
+                  <td
+                    colSpan="6"
+                    style={{
+                      textAlign: "center",
+                      padding: "20px",
+                    }}
+                  >
+                    Loading fraud breakdown...
+                  </td>
+
+                </tr>
+
+              ) : breakdownData.length > 0 ? (
+
+                breakdownData.map(
+                  (item, index) => (
+
+                    <tr
+                      key={
+                        item.channel ||
+                        index
+                      }
+                    >
+
+                      <td>
+                        {item.channel ||
+                          "Unknown"}
+                      </td>
+
+                      <td>
+                        {Number(
+                          item.total_transactions ||
+                            0
+                        ).toLocaleString()}
+                      </td>
+
+                      <td>
+                        {Number(
+                          item.suspicious_transactions ||
+                            0
+                        ).toLocaleString()}
+                      </td>
+
+                      <td>
+                        {Number(
+                          item.fraud_percentage ||
+                            0
+                        ).toFixed(2)}
+                        %
+                      </td>
+
+                      <td>
+                        {Number(
+                          item.average_risk ||
+                            0
+                        ).toFixed(3)}
+                      </td>
+
+                      <td>
+                        {Number(
+                          item.highest_risk ||
+                            0
+                        ).toFixed(2)}
+                      </td>
+
+                    </tr>
+
+                  )
+                )
+
+              ) : (
+
+                <tr>
+
+                  <td
+                    colSpan="6"
+                    className="no-results"
+                  >
+                    No fraud breakdown data found.
+                  </td>
+
+                </tr>
+
+              )}
+
+            </tbody>
+
+          </table>
 
         </div>
 
