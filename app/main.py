@@ -7,6 +7,22 @@ import csv
 import io
 
 app = FastAPI(title="FinGraph API")
+# =========================
+# CORS Configuration
+# =========================
+
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -63,6 +79,24 @@ class ApiInfoResponse(BaseModel):
     version: str
     total_endpoints: int
     endpoints: list[ApiEndpoint]
+
+    # =========================
+# Week 4 Day 2 - Automated Alert Models
+# =========================
+
+class AutomatedAlert(BaseModel):
+    alert_id: str
+    txn_id: str
+    account_id: str
+    risk_index: float
+    severity: str
+    message: str
+
+
+class AutomatedAlertResponse(BaseModel):
+    count: int
+    threshold: float
+    alerts: list[AutomatedAlert]
 
 
 # Day 8 - Fraud Analytics Models
@@ -1518,3 +1552,614 @@ def get_dashboard_overview():
             detail=str(e)
         )
 
+
+# =========================
+# Day 16 - Dashboard Analytics API
+# =========================
+
+@app.get("/dashboard-analytics")
+def get_dashboard_analytics():
+    try:
+        with driver.session() as session:
+
+            # Risk distribution
+            risk_result = session.run(
+                """
+                MATCH (t:Transaction)
+
+                RETURN
+                    sum(CASE
+                        WHEN t.risk_index < 0.4
+                        THEN 1 ELSE 0
+                    END) AS low,
+
+                    sum(CASE
+                        WHEN t.risk_index >= 0.4
+                        AND t.risk_index < 0.8
+                        THEN 1 ELSE 0
+                    END) AS medium,
+
+                    sum(CASE
+                        WHEN t.risk_index >= 0.8
+                        THEN 1 ELSE 0
+                    END) AS high
+                """
+            )
+
+            risk_record = risk_result.single()
+
+            risk_distribution = {
+                "low": risk_record["low"],
+                "medium": risk_record["medium"],
+                "high": risk_record["high"]
+            }
+
+            # Fraud by payment channel
+            channel_result = session.run(
+                """
+                MATCH (t:Transaction)
+
+                RETURN
+                    t.payment_channel AS channel,
+                    count(t) AS total_transactions,
+                    sum(
+                        CASE
+                            WHEN t.fraud_label <> 'normal'
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS suspicious_transactions
+
+                ORDER BY suspicious_transactions DESC
+                """
+            )
+
+            fraud_by_channel = [
+                dict(record)
+                for record in channel_result
+            ]
+
+            # Suspicious merchants
+            merchant_result = session.run(
+                """
+                MATCH (t:Transaction)-[:AT_MERCHANT]->(m:Merchant)
+
+                WHERE t.fraud_label <> 'normal'
+
+                RETURN
+                    m.merchant_type AS merchant_type,
+                    count(t) AS suspicious_transactions
+
+                ORDER BY suspicious_transactions DESC
+                LIMIT 10
+                """
+            )
+
+            suspicious_merchants = [
+                dict(record)
+                for record in merchant_result
+            ]
+
+            # Fraud trend
+            trend_result = session.run(
+                """
+                MATCH (t:Transaction)
+
+                WHERE t.fraud_label <> 'normal'
+
+                RETURN
+                    substring(t.txn_datetime, 0, 10) AS date,
+                    count(t) AS suspicious_transactions
+
+                ORDER BY date
+                """
+            )
+
+            fraud_trend = [
+                dict(record)
+                for record in trend_result
+            ]
+
+            return {
+                "risk_distribution": risk_distribution,
+                "fraud_by_channel": fraud_by_channel,
+                "suspicious_merchants": suspicious_merchants,
+                "fraud_trend": fraud_trend
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+# =========================
+# Week 4 Day 2 - Automated Alerts API
+# =========================
+
+@app.get("/automated-alerts", response_model=AutomatedAlertResponse)
+def get_automated_alerts(
+    min_risk: float = 0.80,
+    limit: int = 20
+):
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (a:Account)-[:MADE]->(t:Transaction)
+
+                WHERE t.risk_index >= $min_risk
+
+                RETURN
+                    t.txn_id AS txn_id,
+                    a.account_id AS account_id,
+                    t.risk_index AS risk_index
+
+                ORDER BY t.risk_index DESC
+
+                LIMIT $limit
+                """,
+                min_risk=min_risk,
+                limit=limit
+            )
+
+            alerts = []
+
+            for record in result:
+
+                risk_index = float(record["risk_index"])
+
+                if risk_index >= 0.90:
+                    severity = "CRITICAL"
+                elif risk_index >= 0.80:
+                    severity = "HIGH"
+                else:
+                    severity = "MEDIUM"
+
+                alert = {
+                    "alert_id": f"ALERT-{record['txn_id']}",
+                    "txn_id": record["txn_id"],
+                    "account_id": record["account_id"],
+                    "risk_index": risk_index,
+                    "severity": severity,
+                    "message": (
+                        f"{severity} risk transaction detected "
+                        f"for account {record['account_id']}"
+                    )
+                }
+
+                alerts.append(alert)
+
+            return {
+                "count": len(alerts),
+                "threshold": min_risk,
+                "alerts": alerts
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to generate automated alerts: {str(e)}"
+        )
+
+
+# =========================
+# Alert & Notification System API
+# =========================
+
+@app.get("/alert-notifications")
+def get_alert_notifications(
+    limit: int = 20,
+    min_risk: float = 0.6
+):
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (a:Account)-[:MADE]->(t:Transaction)
+
+                WHERE t.fraud_label = 'suspicious'
+                  AND t.risk_index >= $min_risk
+
+                OPTIONAL MATCH (t)-[:AT_MERCHANT]->(m:Merchant)
+                OPTIONAL MATCH (t)-[:OCCURRED_IN]->(l:Location)
+
+                RETURN
+                    t.txn_id AS txn_id,
+                    a.account_id AS account_id,
+                    t.txn_amount AS amount,
+                    t.txn_currency AS currency,
+                    t.risk_index AS risk_index,
+                    t.txn_datetime AS txn_datetime,
+                    t.notification_status AS notification_status,
+                    m.merchant_type AS merchant_type,
+                    l.city AS city,
+
+                    CASE
+                        WHEN t.risk_index >= 0.80 THEN 'CRITICAL'
+                        WHEN t.risk_index >= 0.60 THEN 'HIGH'
+                        WHEN t.risk_index >= 0.30 THEN 'MEDIUM'
+                        ELSE 'LOW'
+                    END AS severity
+
+                ORDER BY t.risk_index DESC
+                LIMIT $limit
+                """,
+                limit=limit,
+                min_risk=min_risk
+            )
+
+            notifications = []
+
+            for record in result:
+                item = dict(record)
+
+                severity = item["severity"]
+                account_id = item["account_id"]
+                amount = item["amount"]
+                currency = item["currency"]
+                risk_index = item["risk_index"]
+
+                if severity == "CRITICAL":
+                    title = "Critical Fraud Alert"
+                elif severity == "HIGH":
+                    title = "High Risk Transaction Alert"
+                else:
+                    title = "Suspicious Transaction Alert"
+
+                message = (
+                    f"{severity} risk transaction detected "
+                    f"for account {account_id}. "
+                    f"Amount: {amount} {currency}. "
+                    f"Risk score: {risk_index}."
+                )
+
+                notifications.append({
+                    "txn_id": item["txn_id"],
+                    "account_id": account_id,
+                    "title": title,
+                    "message": message,
+                    "severity": severity,
+                    "risk_index": risk_index,
+                    "amount": amount,
+                    "currency": currency,
+                    "merchant_type": item["merchant_type"],
+                    "city": item["city"],
+                    "txn_datetime": item["txn_datetime"],
+                    "status": item["notification_status"] or "unread"
+                })
+
+            return {
+                "count": len(notifications),
+                "min_risk": min_risk,
+                "notifications": notifications
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+# =========================
+# Day 17 + Day 20 - Alert Notification Summary API
+# =========================
+
+@app.get("/alert-notification-summary")
+def get_alert_notification_summary():
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (t:Transaction)
+
+                WHERE t.fraud_label = 'suspicious'
+                  AND t.risk_index >= 0.30
+
+                RETURN
+                    count(t) AS total_notifications,
+
+                    sum(
+                        CASE
+                            WHEN t.risk_index >= 0.80
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS critical,
+
+                    sum(
+                        CASE
+                            WHEN t.risk_index >= 0.60
+                            AND t.risk_index < 0.80
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS high,
+
+                    sum(
+                        CASE
+                            WHEN t.risk_index >= 0.30
+                            AND t.risk_index < 0.60
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS medium,
+
+                    sum(
+                        CASE
+                            WHEN t.notification_status = 'acknowledged'
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS acknowledged,
+
+                    sum(
+                        CASE
+                            WHEN t.notification_status IS NULL
+                              OR t.notification_status = 'unread'
+                            THEN 1
+                            ELSE 0
+                        END
+                    ) AS unread
+                """
+            )
+
+            record = result.single()
+
+            return {
+                "total_notifications": record["total_notifications"],
+                "critical": record["critical"],
+                "high": record["high"],
+                "medium": record["medium"],
+                "unread": record["unread"],
+                "acknowledged": record["acknowledged"]
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+# =========================
+# Day 18 - Account Risk Scores API
+# =========================
+
+@app.get("/account-risk-scores")
+def get_account_risk_scores(
+    limit: int = 20,
+    min_score: int = 0
+):
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (a:Account)
+                WHERE a.account_id IS NOT NULL
+                  AND a.risk_score IS NOT NULL
+                  AND a.risk_score >= $min_score
+
+                RETURN
+                    a.account_id AS account_id,
+                    a.risk_score AS risk_score,
+                    a.risk_tier AS risk_tier,
+                    a.last_risk_calculated AS last_risk_calculated
+
+                ORDER BY a.risk_score DESC, a.account_id
+                LIMIT $limit
+                """,
+                limit=limit,
+                min_score=min_score
+            )
+
+            accounts = []
+
+            for record in result:
+                account = dict(record)
+
+                if account["last_risk_calculated"] is not None:
+                    account["last_risk_calculated"] = str(
+                        account["last_risk_calculated"]
+                    )
+
+                accounts.append(account)
+
+            return {
+                "count": len(accounts),
+                "min_score": min_score,
+                "accounts": accounts
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+# =========================
+# Day 19 - Alert Acknowledgement API
+# =========================
+
+@app.patch("/alert-notifications/{txn_id}/acknowledge")
+def acknowledge_alert(txn_id: str):
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (t:Transaction {txn_id: $txn_id})
+                WHERE t.fraud_label <> 'normal'
+
+                SET t.notification_status = 'acknowledged',
+                    t.acknowledged_at = datetime()
+
+                RETURN
+                    t.txn_id AS txn_id,
+                    t.notification_status AS status,
+                    t.acknowledged_at AS acknowledged_at
+                """,
+                txn_id=txn_id
+            ).single()
+
+            if not result:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Fraud alert not found"
+                )
+
+            return {
+                "message": "Alert acknowledged successfully",
+                "txn_id": result["txn_id"],
+                "status": result["status"],
+                "acknowledged_at": str(result["acknowledged_at"])
+            }
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
+
+
+# =========================
+# Day 4 - Fraud Network API
+# =========================
+
+@app.get("/fraud-network")
+def get_fraud_network(limit: int = 100):
+    try:
+        with driver.session() as session:
+
+            result = session.run(
+                """
+                MATCH (a:Account)-[:MADE]->(t:Transaction)
+
+                OPTIONAL MATCH (t)-[:AT_MERCHANT]->(m:Merchant)
+                OPTIONAL MATCH (t)-[:OCCURRED_IN]->(l:Location)
+
+                WHERE t.fraud_label <> 'normal'
+
+                RETURN
+                    a.account_id AS account_id,
+                    a.risk_score AS account_risk_score,
+                    a.risk_tier AS account_risk_tier,
+
+                    t.txn_id AS txn_id,
+                    t.txn_amount AS amount,
+                    t.txn_currency AS currency,
+                    t.fraud_label AS fraud_label,
+                    t.risk_index AS risk_index,
+
+                    m.merchant_type AS merchant_type,
+                    l.city AS city
+
+                ORDER BY t.risk_index DESC
+                LIMIT $limit
+                """,
+                limit=limit
+            )
+
+            records = [dict(record) for record in result]
+
+            nodes = {}
+            edges = []
+
+            for record in records:
+
+                account_id = record["account_id"]
+                txn_id = record["txn_id"]
+
+                # Account node
+                if account_id not in nodes:
+                    risk_score = record["account_risk_score"]
+
+                    if risk_score is None:
+                        risk_tier = "UNKNOWN"
+                    elif risk_score >= 80:
+                        risk_tier = "CRITICAL"
+                    elif risk_score >= 60:
+                        risk_tier = "HIGH"
+                    elif risk_score >= 30:
+                        risk_tier = "MEDIUM"
+                    else:
+                        risk_tier = "LOW"
+
+                    nodes[account_id] = {
+                        "id": account_id,
+                        "label": account_id,
+                        "type": "Account",
+                        "risk": risk_tier,
+                        "risk_score": risk_score,
+                        "risk_tier": risk_tier
+                    }
+
+                # Transaction node
+                if txn_id not in nodes:
+
+                    risk_index = float(
+                        record["risk_index"] or 0
+                    )
+
+                    if risk_index >= 0.90:
+                        risk = "CRITICAL"
+                    elif risk_index >= 0.80:
+                        risk = "HIGH"
+                    elif risk_index >= 0.40:
+                        risk = "MEDIUM"
+                    else:
+                        risk = "LOW"
+
+                    nodes[txn_id] = {
+                        "id": txn_id,
+                        "label": (
+                            f"{record['currency'] or '₹'}"
+                            f"{record['amount'] or 0}"
+                        ),
+                        "type": "Transaction",
+                        "risk": risk,
+                        "risk_index": risk_index,
+                        "fraud_label": record["fraud_label"],
+                        "amount": record["amount"],
+                        "currency": record["currency"],
+                        "merchant_type": record["merchant_type"],
+                        "city": record["city"]
+                    }
+
+                # Account -> Transaction relationship
+                edges.append({
+                    "from": account_id,
+                    "to": txn_id,
+                    "source": account_id,
+                    "target": txn_id,
+                    "label": "MADE",
+                    "relationship": "MADE"
+                })
+
+            return {
+                "source": "Neo4j",
+                "synthetic": False,
+                "count": len(nodes),
+                "nodes": list(nodes.values()),
+                "edges": edges,
+                "stats": {
+                    "total_nodes": len(nodes),
+                    "total_edges": len(edges)
+                }
+            }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unable to load fraud network: {str(e)}"
+        )

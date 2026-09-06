@@ -2,27 +2,32 @@
 Kafka Event Producer for Financial Transaction Data Streaming.
 Engineered by shubhamgawari9226 - Simulates real-time transaction events.
 """
+import os
 import json
 import time
 import pandas as pd
+from dotenv import load_dotenv
 from kafka import KafkaProducer
 
+load_dotenv()
+
 # 1. Initialize Kafka Producer Configuration
-KAFKA_TOPIC = 'financial-transactions'
-KAFKA_SERVER = 'localhost:9092'
+KAFKA_TOPIC = os.getenv('KAFKA_TOPIC', 'financial-transactions')
+KAFKA_SERVER = os.getenv('KAFKA_SERVER', 'localhost:9092')
+STREAM_DELAY = float(os.getenv('STREAM_INTERVAL_SECONDS', '0.5'))
 
 try:
     producer = KafkaProducer(
         bootstrap_servers=[KAFKA_SERVER],
         value_serializer=lambda v: json.dumps(v).encode('utf-8')
     )
-    print(f"Successfully connected to Kafka server at {KAFKA_SERVER}")
+    print(f"Successfully connected to Kafka server at {KAFKA_SERVER} (Topic: {KAFKA_TOPIC})")
 except Exception as e:
     print(f"Error: Could not connect to Kafka server. Details: {e}")
     producer = None
 
 # 2. Load the Dataset with New Column Structure
-csv_file_path = 'transactions_dataset.csv'
+csv_file_path = os.getenv('TRANSACTIONS_CSV_PATH', 'transactions_dataset.csv')
 
 try:
     print(f"Loading updated dataset from '{csv_file_path}'...")
@@ -35,7 +40,8 @@ except FileNotFoundError:
     print(f"Error: The file '{csv_file_path}' was not found in your project folder.")
     df_final = None
 
-# 3. Stream Rows to Kafka with Updated Headers"""
+# 3. Stream Rows to Kafka with Updated Headers
+print("""
 Kafka Event Producer for Financial Transaction Data Streaming.
 Engineered by shubhamgawari9226 - Simulates real-time transaction events.
 """)
