@@ -2145,6 +2145,61 @@ def get_fraud_network(limit: int = 100):
                     "label": "MADE",
                     "relationship": "MADE"
                 })
+                                # ==========================================
+                # Merchant node
+                # ==========================================
+
+                merchant_type = record.get("merchant_type")
+
+                if merchant_type:
+                    merchant_id = f"MERCHANT::{merchant_type}"
+
+                    if merchant_id not in nodes:
+                        nodes[merchant_id] = {
+                            "id": merchant_id,
+                            "label": merchant_type,
+                            "type": "Merchant",
+                            "merchant_type": merchant_type,
+                            "risk": "LOW"
+                        }
+
+                    # Transaction -> Merchant relationship
+                    edges.append({
+                        "from": txn_id,
+                        "to": merchant_id,
+                        "source": txn_id,
+                        "target": merchant_id,
+                        "label": "AT_MERCHANT",
+                        "relationship": "AT_MERCHANT"
+                    })
+
+                # ==========================================
+                # Location node
+                # ==========================================
+
+                city = record.get("city")
+
+                if city:
+                    location_id = f"LOCATION::{city}"
+
+                    if location_id not in nodes:
+                        nodes[location_id] = {
+                            "id": location_id,
+                            "label": city,
+                            "type": "Location",
+                            "city": city,
+                            "risk": "LOW"
+                        }
+
+                    # Transaction -> Location relationship
+                    edges.append({
+                        "from": txn_id,
+                        "to": location_id,
+                        "source": txn_id,
+                        "target": location_id,
+                        "label": "OCCURRED_IN",
+                        "relationship": "OCCURRED_IN"
+                    })
 
             return {
                 "source": "Neo4j",

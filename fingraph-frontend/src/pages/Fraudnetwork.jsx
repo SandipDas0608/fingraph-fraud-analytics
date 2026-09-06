@@ -1,7 +1,6 @@
 import React, {
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 
@@ -222,34 +221,12 @@ function FraudNetwork() {
   // IMPORTANT
   // Prevent React StrictMode duplicate API call
   // ======================================================
-
-  const hasLoadedRef =
-    useRef(false);
-
   // ======================================================
   // LOAD FRAUD NETWORK
   // ======================================================
 
   useEffect(() => {
-    // ----------------------------------------------------
-    // React StrictMode can execute useEffect twice
-    // during development.
-    //
-    // Prevent the second API request.
-    // ----------------------------------------------------
-
-    if (hasLoadedRef.current) {
-      console.log(
-        "⚠️ Fraud Network API already requested - skipping duplicate call."
-      );
-
-      return;
-    }
-
-    hasLoadedRef.current = true;
-
     let mounted = true;
-
     const loadFraudNetwork =
       async () => {
         try {

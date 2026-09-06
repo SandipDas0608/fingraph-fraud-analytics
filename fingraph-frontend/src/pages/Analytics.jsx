@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-
 import {
+  getStats,
   getFraudAnalytics,
   getFraudBreakdown,
   getRiskDistribution,
@@ -17,6 +17,7 @@ function Analytics() {
   const [transactions, setTransactions] = useState([]);
   const [riskData, setRiskData] = useState(null);
   const [breakdownData, setBreakdownData] = useState([]);
+  const [statsData, setStatsData] = useState(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -32,14 +33,18 @@ function Analytics() {
         setError("");
 
         const [
-          fraudResponse,
-          riskResponse,
-          breakdownResponse,
-        ] = await Promise.all([
-          getFraudAnalytics(50),
-          getRiskDistribution(),
-          getFraudBreakdown(),
-        ]);
+  fraudResponse,
+  riskResponse,
+  breakdownResponse,
+  statsResponse,
+] = await Promise.all([
+  getFraudAnalytics(50),
+  getRiskDistribution(),
+  getFraudBreakdown(),
+  getStats(),
+]);
+
+setStatsData(statsResponse);
 
         // =====================================
         // FRAUD ANALYTICS
@@ -212,12 +217,9 @@ function Analytics() {
   // FRAUD TRANSACTIONS
   // =========================================
 
-  const fraudTransactions =
-    transactions.filter(
-      (item) =>
-        item.status === "Fraud"
-    ).length;
-
+  const fraudTransactions = Number(
+  statsData?.fraud_transactions || 0
+);
   // =========================================
   // REVIEW TRANSACTIONS
   // =========================================

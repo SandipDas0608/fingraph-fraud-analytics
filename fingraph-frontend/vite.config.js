@@ -10,17 +10,9 @@ export default defineConfig({
 
     proxy: {
       "/api": {
-        target: "https://cute-hoops-notice.loca.lt",
-
+        target: "http://127.0.0.1:8000",
         changeOrigin: true,
-        secure: true,
-
-        headers: {
-          "bypass-tunnel-reminder": "true",
-        },
-
-        rewrite: (path) =>
-          path.replace(/^\/api/, ""),
+        rewrite: (path) => path.replace(/^\/api/, ""),
       },
     },
   },
