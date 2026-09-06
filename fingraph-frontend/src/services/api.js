@@ -63,8 +63,8 @@ export const getStats = async () => {
   return apiRequest("/stats");
 };
 
-export const getTransactions = async () => {
-  return apiRequest("/transactions");
+export const getTransactions = async (limit = 10, page = 1) => {
+  return apiRequest(`/transactions?page=${page}&limit=${limit}`);
 };
 
 export const getFraudAnalytics = async () => {
