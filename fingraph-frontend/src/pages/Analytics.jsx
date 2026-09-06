@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   getStats,
-  getFraudAnalytics,
+  getTransactions,
   getFraudBreakdown,
   getRiskDistribution,
 } from "../services/api";
@@ -33,12 +33,12 @@ function Analytics() {
         setError("");
 
         const [
-  fraudResponse,
+  transactionsResponse,
   riskResponse,
   breakdownResponse,
   statsResponse,
 ] = await Promise.all([
-  getFraudAnalytics(50),
+  getTransactions(3000),
   getRiskDistribution(),
   getFraudBreakdown(),
   getStats(),
@@ -52,7 +52,7 @@ setStatsData(statsResponse);
         // =====================================
 
         const backendTransactions =
-          fraudResponse?.transactions || [];
+        transactionsResponse?.transactions || [];
 
         const formattedTransactions =
           backendTransactions.map((item) => {
@@ -62,7 +62,7 @@ setStatsData(statsResponse);
 
             let risk = "Low";
 
-            if (riskIndex >= 0.7) {
+            if (riskIndex >= 0.8) {
               risk = "High";
             } else if (riskIndex >= 0.4) {
               risk = "Medium";
