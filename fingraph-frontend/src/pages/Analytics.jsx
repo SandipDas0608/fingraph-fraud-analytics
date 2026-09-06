@@ -234,12 +234,11 @@ setStatsData(statsResponse);
   // SAFE TRANSACTIONS
   // =========================================
 
-  const safeTransactions =
-    transactions.filter(
-      (item) =>
-        item.status === "Safe"
-    ).length;
-
+  const safeTransactions = Math.max(
+  Number(statsData?.total_transactions || 0) -
+  Number(statsData?.fraud_transactions || 0),
+  0
+);
   // =========================================
   // SEARCH + FILTER
   // =========================================
